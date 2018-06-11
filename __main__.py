@@ -23,10 +23,9 @@ import operator
 from docopt import docopt
 from functools import reduce
 
-import myia.debug.do_inject
 from myia.opt import lib as optlib
 
-from . import cmd, cfg, typ
+from . import cmd, cfg, typ, do_inject
 from .tools import Options
 
 
