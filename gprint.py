@@ -5,7 +5,8 @@ import os
 
 from hrepr import hrepr
 
-from myia.dtype import Type, Bool, Int, Float, Tuple, List, Function
+from myia.dtype import Type, Bool, Int, Float, Tuple, List, Function, \
+    GradTagged
 from myia.infer import Reference, Context
 from myia.info import DebugInfo, About
 from myia.ir import ANFNode, Apply, Constant, Graph, is_apply, is_constant, \
@@ -14,6 +15,7 @@ from myia.ir import ANFNode, Apply, Constant, Graph, is_apply, is_constant, \
 from myia.parser import Location
 from myia.prim import ops as primops, Primitive
 from myia.prim.value_inferrers import LimitedValue
+from myia.prim.py_implementations import Zero
 from myia.opt import PatternEquilibriumOptimizer, pattern_replacer
 from myia.utils import Registry
 from myia.utils.unify import Var, var, FilterVar
@@ -448,6 +450,14 @@ def _opt_accum_cons(optimizer, node, equiv):
         return node
 
 
+@pattern_replacer(primops.identity, X)
+def _opt_fancy_identity(optimizer, node, equiv):
+    x = equiv[X]
+    ct = Constant(GraphCosmeticPrimitive(f'=', on_edge=True))
+    with About(node.debug, 'cosmetic'):
+        return Apply([ct, x], node.graph)
+
+
 @pattern_replacer(primops.getitem, X, V)
 def _opt_fancy_getitem(optimizer, node, equiv):
     x = equiv[X]
@@ -476,6 +486,18 @@ def _opt_fancy_getattr(optimizer, node, equiv):
         return Apply([ct, x], node.graph)
 
 
+@pattern_replacer(primops.J, V)
+def _opt_embed_J(optimizer, node, equiv):
+    v = equiv[V].value
+    if isinstance(v, (Primitive, GraphCosmeticPrimitive, Graph)):
+        label = short_labeler.label(equiv[V], True)
+        with About(node.debug, 'cosmetic'):
+            ct = Constant(GraphCosmeticPrimitive(f'J({label})'))
+        return ct
+    else:
+        return node
+
+
 def cosmetic_transformer(g):
     """Transform a graph so that it looks nicer.
 
@@ -484,9 +506,11 @@ def cosmetic_transformer(g):
     """
     opt = PatternEquilibriumOptimizer(
         _opt_accum_cons,
+        _opt_fancy_identity,
         _opt_fancy_getitem,
         _opt_fancy_resolve,
         _opt_fancy_getattr,
+        _opt_embed_J,
     )
     opt(g)
     return g
@@ -690,6 +714,12 @@ class _GraphManager:
         return pr.__hrepr__(H, hrepr)
 
 
+@mixin(Zero)
+class _Zero:
+    def __hrepr__(self, H, hrepr):
+        return H.b('ZERO')
+
+
 @mixin(VMFrame)
 class _VMFrame:
     def __hrepr__(self, H, hrepr):
@@ -776,6 +806,15 @@ class _Function:
         return hrepr.stdrepr_iterable(
             list(self.arguments) + [H.span('→'), self.retval],
             cls='myia-type-function'
+        )
+
+
+@mixin(GradTagged)
+class _GradTagged:
+    def __hrepr__(self, H, hrepr):
+        return H.div['myia-type-GradTagged'](
+            short_relation_symbols['grad_fprop'],
+            hrepr(self.subtype)
         )
 
 
