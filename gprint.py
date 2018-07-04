@@ -12,11 +12,12 @@ from myia.ir import ANFNode, Apply, Constant, Graph, is_apply, is_constant, \
     is_constant_graph, is_parameter, is_special, GraphCloner, \
     ParentProxy, GraphManager, manage
 from myia.parser import Location
-from myia.prim import ops as primops
+from myia.prim import ops as primops, Primitive
 from myia.prim.value_inferrers import LimitedValue
 from myia.opt import PatternEquilibriumOptimizer, pattern_replacer
-from myia.unify import Var, var, FilterVar
 from myia.utils import Registry
+from myia.utils.unify import Var, var, FilterVar
+from myia.vm import VMFrame, Closure
 
 from myia.debug.label import NodeLabeler, short_labeler, \
     short_relation_symbols, CosmeticPrimitive
@@ -115,9 +116,10 @@ class GraphPrinter:
     @classmethod
     def __hrepr_resources__(cls, H):
         """Require the cytoscape plugin for buche."""
-        return H.bucheRequire(name='cytoscape',
-                              channels='cytoscape',
-                              components='cytoscape-graph')
+        return (H.style(mcss),
+                H.bucheRequire(name='cytoscape',
+                               channels='cytoscape',
+                               components='cytoscape-graph'))
 
     def __hrepr__(self, H, hrepr):
         """Return HTML representation (uses buche-cytoscape)."""
@@ -423,7 +425,7 @@ L = var(is_constant_graph)
 
 
 @pattern_replacer(primops.cons_tuple, X, Y)
-def _opt_accum_cons(node, equiv):
+def _opt_accum_cons(optimizer, node, equiv):
     x = equiv[X]
     y = equiv[Y]
     args = [Constant(make_tuple), x]
@@ -447,7 +449,7 @@ def _opt_accum_cons(node, equiv):
 
 
 @pattern_replacer(primops.getitem, X, V)
-def _opt_fancy_getitem(node, equiv):
+def _opt_fancy_getitem(optimizer, node, equiv):
     x = equiv[X]
     v = equiv[V]
     ct = Constant(GraphCosmeticPrimitive(f'[{v.value}]', on_edge=True))
@@ -456,7 +458,7 @@ def _opt_fancy_getitem(node, equiv):
 
 
 @pattern_replacer(primops.resolve, V1, V2)
-def _opt_fancy_resolve(node, equiv):
+def _opt_fancy_resolve(optimizer, node, equiv):
     ns = equiv[V1]
     name = equiv[V2]
     with About(node.debug, 'cosmetic'):
@@ -466,7 +468,7 @@ def _opt_fancy_resolve(node, equiv):
 
 
 @pattern_replacer(primops.getattr, X, V)
-def _opt_fancy_getattr(node, equiv):
+def _opt_fancy_getattr(optimizer, node, equiv):
     x = equiv[X]
     v = equiv[V]
     ct = Constant(GraphCosmeticPrimitive(f'{v.value}', on_edge=True))
@@ -686,6 +688,30 @@ class _GraphManager:
                 pr.cynode(dep, lbl(dep), 'intermediate')
                 pr.cyedge(g, dep, '')
         return pr.__hrepr__(H, hrepr)
+
+
+@mixin(VMFrame)
+class _VMFrame:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object(
+            'Frame',
+            [
+                ('graph', self.graph),
+                ('values', self.values),
+                ('closure', self.closure),
+                ('todo', self.todo),
+                ('ownership', [x.graph in (None, self.graph) for x in self.todo])
+            ]
+        )
+
+
+@mixin(Closure)
+class _Closure:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object('Closure', [
+            ('graph', self.graph),
+            ('values', self.values)
+        ])
 
 
 #################

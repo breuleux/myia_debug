@@ -8,6 +8,7 @@ Usage:
      [-t TYPE...]
      [-O OPT...]
      [--config FILE...]
+     [--pipeline PIP...]
      [<rest>...]
 
 Options:
@@ -16,7 +17,8 @@ Options:
   -g                    Apply gradient once for each occurrence of the flag.
   -t --types TYPE...    Types of the arguments.
   -c --config FILE...   Use given configuration.
-  -O --opt OPT..        Run given optimizations.
+  -O --opt OPT...       Run given optimizations.
+  -p --pipeline PIP...  The pipeline to use
 """
 
 import operator
@@ -24,9 +26,10 @@ from docopt import docopt
 from functools import reduce
 
 from myia.opt import lib as optlib
+from myia.pipeline import merge
 
-from . import cmd, cfg, typ, do_inject
-from .tools import Options
+from . import cmd, cfg, typ, steps, do_inject
+from .tools import Options, Not
 
 
 def imp(ref):
@@ -42,6 +45,8 @@ def force_sequence(x, always_wrap=True):
 
 def resolve(ref, default_modules=[], always_wrap=True):
     def fsq(x):
+        if neg:
+            x = Not(x)
         return force_sequence(x, always_wrap)
 
     def do_all(rs):
@@ -54,9 +59,17 @@ def resolve(ref, default_modules=[], always_wrap=True):
     if not isinstance(ref, str):
         return fsq(ref)
 
+    neg = False
+
     refs = ref.split(',')
     if len(refs) > 1:
         return do_all(refs)
+
+    if ref.startswith('-'):
+        ref = ref[1:]
+        neg = True
+
+    ref = ref.replace('!', '_bang_')
 
     if ':' in ref:
         module, field = ref.split(':')
@@ -89,29 +102,20 @@ def process_options(options, rest_target):
     optim = resolve(options['--opt'],
                     default_modules=[optlib, cfg],
                     always_wrap=False)
+    pip = resolve(options['--pipeline'],
+                  default_modules=[steps, cfg],
+                  always_wrap=False)
     types = resolve(options['--types'], [typ])
     return {
         'command': command,
         'fns': fns,
         'args': args,
         'opts': optim,
+        'pipeline': pip,
         'types': types,
         'grad': options['-g'],
         'options': options
     }
-
-
-def merge_options(d1, d2):
-    rval = {}
-    keys = set(d1.keys()) | set(d2.keys())
-    for k in keys:
-        if k not in d1:
-            rval[k] = d2[k]
-        elif isinstance(d1[k], list):
-            rval[k] = d1.get(k, []) + d2.get(k, [])
-        else:
-            rval[k] = d2.get(k, None) or d1.get(k, None)
-    return rval
 
 
 def resolve_options(*option_dicts,
@@ -120,10 +124,10 @@ def resolve_options(*option_dicts,
                     rest_target='--fn'):
     options = {}
     for o in option_dicts:
-        options = merge_options(options, o)
+        options = merge(options, o)
 
     if read_argv:
-        options = merge_options(options, docopt(__doc__))
+        options = merge(options, docopt(__doc__))
 
     if read_config:
         while True:
@@ -134,7 +138,7 @@ def resolve_options(*option_dicts,
             if not configs:
                 break
             for config in configs:
-                options = merge_options(config, options)
+                options = merge(config, options)
 
     return options
 
