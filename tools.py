@@ -1,5 +1,5 @@
 
-from myia.api import parse as parse, standard_pipeline
+from myia.api import scalar_pipeline, standard_pipeline
 from myia.prim.py_implementations import py_implementations
 from myia.ir import GraphCloner
 from myia.opt import (
@@ -21,6 +21,10 @@ class Options:
         self.options = options
 
     def pipeline(self, default=steps.standard, config=None):
+        if self.options['--scalar']:
+            resources = scalar_pipeline.resources
+        else:
+            resources = standard_pipeline.resources
         all_steps = self.options['pipeline']
         pos = [p for p in all_steps if not isinstance(p, Not)]
         neg = {p.value for p in all_steps if isinstance(p, Not)}
@@ -28,7 +32,7 @@ class Options:
             pos = default
         final = [p for p in pos if p not in neg]
         pdef = PipelineDefinition(
-            resources=standard_pipeline.resources,
+            resources=resources,
             steps={p._name: p for p in final}
         )
         opts = self.options['opts']
@@ -52,12 +56,15 @@ class Options:
     def argspec(self):
         ovalues = self['args']
         otypes = self['types']
+        oshapes = self['shapes']
 
-        args = [{} for _ in range(max(len(ovalues), len(otypes)))]
+        args = [{} for _ in range(max(len(ovalues), len(otypes), len(oshapes)))]
         for a, value in zip(args, ovalues):
             a['value'] = value if value is not None else ANYTHING
         for a, typ in zip(args, otypes):
             a['type'] = typ
+        for a, shp in zip(args, oshapes):
+            a['shape'] = shp
 
         return args
 

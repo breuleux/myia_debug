@@ -6,9 +6,13 @@ Usage:
   dm <command>
      [-f FUNCTION...] [-a ARG...] [-g...]
      [-t TYPE...]
+     [--shapes SHAPE...]
      [-O OPT...]
      [--config FILE...]
      [--pipeline PIP...]
+     [--scalar]
+     [--no-beautify]
+     [--function-nodes]
      [<rest>...]
 
 Options:
@@ -16,15 +20,21 @@ Options:
   -a --args ARG...      Arguments to feed to the function.
   -g                    Apply gradient once for each occurrence of the flag.
   -t --types TYPE...    Types of the arguments.
+  --shapes SHAPE...     Shapes of the arguments.
   -c --config FILE...   Use given configuration.
   -O --opt OPT...       Run given optimizations.
-  -p --pipeline PIP...  The pipeline to use
+  -p --pipeline PIP...  The pipeline to use.
+  --scalar              Use the scalar pipeline.
+  --no-beautify         Don't beautify graphs.
+  --function-nodes      Show individual nodes for functions called.
 """
 
 import operator
 from docopt import docopt
 from functools import reduce
 
+from myia.debug import traceback
+from myia.infer import InferenceError
 from myia.opt import lib as optlib
 from myia.pipeline import merge
 
@@ -43,14 +53,15 @@ def force_sequence(x, always_wrap=True):
         return [x]
 
 
-def resolve(ref, default_modules=[], always_wrap=True):
+def resolve(ref, default_modules=[], always_wrap=True, split=True):
     def fsq(x):
         if neg:
             x = Not(x)
         return force_sequence(x, always_wrap)
 
-    def do_all(rs):
-        parts = [resolve(r, default_modules, always_wrap) for r in rs]
+    def do_all(rs, split=True):
+        parts = [resolve(r, default_modules, always_wrap, split=split)
+                 for r in rs]
         return reduce(operator.add, parts, [])
 
     if isinstance(ref, (list, tuple)):
@@ -61,9 +72,15 @@ def resolve(ref, default_modules=[], always_wrap=True):
 
     neg = False
 
-    refs = ref.split(',')
+    if not split:
+        refs = [ref]
+    elif ';' in ref:
+        refs = ref.split(';')
+    else:
+        refs = ref.split(',')
+
     if len(refs) > 1:
-        return do_all(refs)
+        return do_all(refs, split=False)
 
     if ref.startswith('-'):
         ref = ref[1:]
@@ -106,15 +123,18 @@ def process_options(options, rest_target):
                   default_modules=[steps, cfg],
                   always_wrap=False)
     types = resolve(options['--types'], [typ])
+    shapes = resolve(options['--shapes'], [])
     return {
+        **options,
         'command': command,
         'fns': fns,
         'args': args,
         'opts': optim,
         'pipeline': pip,
         'types': types,
+        'shapes': shapes,
         'grad': options['-g'],
-        'options': options
+        'options': options,
     }
 
 
@@ -149,7 +169,12 @@ def main(*option_dicts, read_argv=True, read_config=True, rest_target='--fn'):
                               read_config=read_config,
                               rest_target=rest_target)
     options = process_options(options, rest_target)
-    options['command'](Options(options))
+    try:
+        options['command'](Options(options))
+    except InferenceError:
+        raise
+    except Exception as e:
+        buche(e)
 
 
 if __name__ == '__main__':

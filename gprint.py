@@ -5,7 +5,8 @@ import os
 
 from hrepr import hrepr
 
-from myia.dtype import Type, Bool, Int, Float, Tuple, List, Function
+from myia.dtype import Type, Bool, Int, Float, Tuple, List, Class, Function, \
+    TypeMeta
 from myia.infer import Reference, Context
 from myia.info import DebugInfo, About
 from myia.ir import ANFNode, Apply, Constant, Graph, is_apply, is_constant, \
@@ -15,8 +16,8 @@ from myia.parser import Location
 from myia.prim import ops as primops, Primitive
 from myia.prim.value_inferrers import LimitedValue
 from myia.opt import PatternEquilibriumOptimizer, pattern_replacer
-from myia.utils import Registry
-from myia.utils.unify import Var, var, FilterVar
+from myia.utils import Registry, NS
+from myia.utils.unify import Var, SVar, var, FilterVar
 from myia.vm import VMFrame, Closure
 
 from myia.debug.label import NodeLabeler, short_labeler, \
@@ -418,37 +419,22 @@ make_tuple = GraphCosmeticPrimitive('(...)')
 
 X = Var('X')
 Y = Var('Y')
+Xs = SVar(Var())
 V = var(is_constant)
 V1 = var(is_constant)
 V2 = var(is_constant)
 L = var(is_constant_graph)
 
 
-@pattern_replacer(primops.cons_tuple, X, Y)
-def _opt_accum_cons(optimizer, node, equiv):
-    x = equiv[X]
-    y = equiv[Y]
-    args = [Constant(make_tuple), x]
-    while isinstance(y, Apply):
-        if y.inputs[0].value is primops.cons_tuple:
-            args.append(y.inputs[1])
-            y = y.inputs[2]
-        elif y.inputs[0].value is make_tuple:
-            args += y.inputs[1:]
-            y = Constant(())
-            break
-        else:
-            break
-
-    if is_constant(y) and isinstance(y.value, tuple):
-        args += [Constant(xx) for xx in y.value]
-        with About(node.debug, 'cosmetic'):
-            return Apply(args, node.graph)
-    else:
-        return node
+@pattern_replacer(primops.make_tuple, Xs)
+def _opt_fancy_make_tuple(optimizer, node, equiv):
+    xs = equiv[Xs]
+    ct = Constant(GraphCosmeticPrimitive('(...)'))
+    with About(node.debug, 'cosmetic'):
+        return Apply([ct, *xs], node.graph)
 
 
-@pattern_replacer(primops.getitem, X, V)
+@pattern_replacer(primops.tuple_getitem, X, V)
 def _opt_fancy_getitem(optimizer, node, equiv):
     x = equiv[X]
     v = equiv[V]
@@ -483,7 +469,7 @@ def cosmetic_transformer(g):
     with fake functions that only serve a cosmetic purpose.
     """
     opt = PatternEquilibriumOptimizer(
-        _opt_accum_cons,
+        _opt_fancy_make_tuple,
         _opt_fancy_getitem,
         _opt_fancy_resolve,
         _opt_fancy_getattr,
@@ -575,6 +561,12 @@ class _ParentProxy:
 ########
 # Misc #
 ########
+
+
+@mixin(NS)
+class _NS:
+    def __hrepr__(self, H, hrepr):
+        return hrepr(self.__dict__)
 
 
 @mixin(LimitedValue)
@@ -719,64 +711,110 @@ class _Closure:
 #################
 
 
-@mixin(Type)
-class _Type:
+@mixin(TypeMeta)
+class _TypeMeta:
+    def __hrepr__(cls, H, hrepr):
+        return cls.__type_hrepr__(H, hrepr)
+
     @classmethod
     def __hrepr_resources__(cls, H):
         return H.style(mcss)
 
 
+@mixin(Type)
+class _Type:
+    @classmethod
+    def __type_hrepr__(cls, H, hrepr):
+        return H.span(str(cls))
+
+
 @mixin(Bool)
 class _Bool:
-    def __hrepr__(self, H, hrepr):
+    @classmethod
+    def __type_hrepr__(cls, H, hrepr):
         return H.div['myia-type-bool']('b')
 
 
 @mixin(Int)
 class _Int:
-    def __hrepr__(self, H, hrepr):
-        return H.div['myia-type-int'](
-            H.sub(self.bits)
-        )
+    @classmethod
+    def __type_hrepr__(cls, H, hrepr):
+        if cls.is_generic():
+            return H.span('Int')
+        else:
+            return H.div['myia-type-int'](
+                H.sub(cls.bits)
+            )
 
 
 @mixin(Float)
 class _Float:
-    def __hrepr__(self, H, hrepr):
-        return H.div['myia-type-float'](
-            H.sub(self.bits)
-        )
+    @classmethod
+    def __type_hrepr__(cls, H, hrepr):
+        if cls.is_generic():
+            return H.span('Float')
+        else:
+            return H.div['myia-type-float'](
+                H.sub(cls.bits)
+            )
 
 
 @mixin(Tuple)
 class _Tuple:
-    def __hrepr__(self, H, hrepr):
-        return hrepr.stdrepr_iterable(
-            self.elements,
-            cls='myia-type-tuple',
-            before='(',
-            after=')'
-        )
+    @classmethod
+    def __type_hrepr__(cls, H, hrepr):
+        if cls.is_generic():
+            return H.span('Tuple')
+        else:
+            return hrepr.stdrepr_iterable(
+                cls.elements,
+                cls='myia-type-tuple',
+                before='(',
+                after=')'
+            )
 
 
 @mixin(List)
 class _List:
-    def __hrepr__(self, H, hrepr):
-        return hrepr.stdrepr_iterable(
-            [self.element_type],
-            cls='myia-type-list',
-            before='[',
-            after=']'
-        )
+    @classmethod
+    def __type_hrepr__(cls, H, hrepr):
+        if cls.is_generic():
+            return H.span('List')
+        else:
+            return hrepr.stdrepr_iterable(
+                [cls.element_type],
+                cls='myia-type-list',
+                before='[',
+                after=']'
+            )
+
+
+@mixin(Class)
+class _Class:
+    @classmethod
+    def __type_hrepr__(cls, H, hrepr):
+        if cls.is_generic():
+            return H.span('Class')
+        else:
+            return hrepr.stdrepr_object(
+                str(cls.tag),
+                [(attr, hrepr(typ))
+                for attr, typ in cls.attributes.items()],
+                delimiter='↦'
+            )
 
 
 @mixin(Function)
 class _Function:
-    def __hrepr__(self, H, hrepr):
-        return hrepr.stdrepr_iterable(
-            list(self.arguments) + [H.span('→'), self.retval],
-            cls='myia-type-function'
-        )
+    @classmethod
+    def __type_hrepr__(cls, H, hrepr):
+        if cls.is_generic():
+            return H.span('Function')
+        else:
+            return hrepr.stdrepr_iterable(
+                list(cls.arguments) + [H.span('→'), cls.retval],
+                cls='myia-type-function'
+            )
 
 
 ################

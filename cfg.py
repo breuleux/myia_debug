@@ -6,10 +6,8 @@ from myia.prim import ops as P
 tuple_opts = [
     lib.getitem_tuple,
     lib.setitem_tuple,
-    lib.head_tuple,
     lib.tail_tuple,
-    lib.bubble_op_cons_binary,
-    lib.bubble_op_nil_binary,
+    lib.bubble_op_tuple_binary,
 ]
 
 

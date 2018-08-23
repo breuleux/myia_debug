@@ -1,22 +1,41 @@
 
+from myia.ir import ANFNode
+
 from . import steps
+
 
 def show(o):
     res = o.run(default=[steps.parse,
-                         steps.resolve,
-                         steps.opt,
-                         steps.export])
+                         steps.resolve])
+    if 'error' in res:
+        raise res['error']
+
     g = res['graph']
 
-    from myia.ir import ANFNode
     def ttip(node):
         if isinstance(node, ANFNode):
-            return node.type
+            return node.inferred
 
     buche(
         g,
         graph_width='95vw',
         graph_height='95vh',
         node_tooltip=ttip,
-        # graph_beautify=False
+        function_in_node=not o['--function-nodes'],
+        graph_beautify=not o['--no-beautify'],
     )
+
+
+def run(o):
+    res = o.run(default=[steps.parse,
+                         steps.resolve,
+                         steps.infer,
+                         steps.specialize,
+                         steps.opt,
+                         steps.debug_export])
+    if 'error' in res:
+        raise res['error']
+
+    f = res['output']
+
+    print('Result:', f(*o['args']))
