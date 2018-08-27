@@ -99,8 +99,6 @@ def resolve(ref, default_modules=[], always_wrap=True, split=True):
             x = getattr(mod, ref, _)
             if x is not _:
                 return fsq(x)
-        else:
-            raise Exception(f'Could not resolve reference: {ref}')
 
     return fsq(eval(ref))
 
@@ -123,7 +121,7 @@ def process_options(options, rest_target):
                   default_modules=[steps, cfg],
                   always_wrap=False)
     types = resolve(options['--types'], [typ])
-    shapes = resolve(options['--shapes'], [])
+    shapes = resolve(options['--shapes'], [typ])
     return {
         **options,
         'command': command,
