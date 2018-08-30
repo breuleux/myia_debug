@@ -9,8 +9,7 @@ from myia.dtype import Type, Bool, Int, Float, Tuple, List, Class, Function, \
     TypeMeta
 from myia.infer import Reference, Context
 from myia.info import DebugInfo, About
-from myia.ir import ANFNode, Apply, Constant, Graph, is_apply, is_constant, \
-    is_constant_graph, is_parameter, is_special, GraphCloner, \
+from myia.ir import ANFNode, Apply, Constant, Graph, GraphCloner, \
     ParentProxy, GraphManager, manage
 from myia.parser import Location
 from myia.prim import ops as primops, Primitive
@@ -254,11 +253,11 @@ class MyiaGraphPrinter(GraphPrinter):
         self.cynode(id=node, label=lbl, parent=g, classes=cl)
 
         fn = node.inputs[0] if node.inputs else None
-        if fn and is_constant_graph(fn):
+        if fn and fn.is_constant_graph():
             self.graphs.add(fn.value)
 
         edges = []
-        if fn and not (is_constant(fn) and self.function_in_node):
+        if fn and not (fn.is_constant() and self.function_in_node):
             edges.append((node, 'F', fn))
 
         edges += [(node, i + 1, inp)
@@ -273,13 +272,13 @@ class MyiaGraphPrinter(GraphPrinter):
             pass
         elif node in self.returns:
             cl = 'output'
-        elif is_parameter(node):
+        elif node.is_parameter():
             cl = 'input'
             if node not in g.parameters:
                 cl += ' unlisted'
-        elif is_constant(node):
+        elif node.is_constant():
             cl = 'constant'
-        elif is_special(node):
+        elif node.is_special():
             cl = f'special-{type(node.special).__name__}'
         else:
             cl = 'intermediate'
@@ -301,7 +300,7 @@ class MyiaGraphPrinter(GraphPrinter):
         if g and g not in self.processed:
             self.add_graph(g)
 
-        if node.inputs and is_constant(node.inputs[0]):
+        if node.inputs and node.inputs[0].is_constant():
             fn = node.inputs[0].value
             if fn in cosmetics:
                 cosmetics[fn](self, node, g, cl)
@@ -318,7 +317,7 @@ class MyiaGraphPrinter(GraphPrinter):
         """Create edges."""
         for edge in edges:
             src, lbl, dest = edge
-            if is_constant(dest) and self.duplicate_constants:
+            if dest.is_constant() and self.duplicate_constants:
                 self.follow(dest)
                 cid = self.fresh_id()
                 self.cynode(id=cid,
@@ -353,7 +352,7 @@ class MyiaGraphPrinter(GraphPrinter):
             return
 
         ret = g.return_.inputs[1]
-        if not is_apply(ret) or ret.graph is not g:
+        if not ret.is_apply() or ret.graph is not g:
             ret = g.return_
 
         self.returns.add(ret)
@@ -374,7 +373,7 @@ class MyiaGraphPrinter(GraphPrinter):
 
     def follow(self, node):
         """Add this node's graph if follow_references is True."""
-        if is_constant_graph(node) and self.follow_references:
+        if node.is_constant_graph() and self.follow_references:
             self.graphs.add(node.value)
 
 
@@ -420,10 +419,10 @@ make_tuple = GraphCosmeticPrimitive('(...)')
 X = Var('X')
 Y = Var('Y')
 Xs = SVar(Var())
-V = var(is_constant)
-V1 = var(is_constant)
-V2 = var(is_constant)
-L = var(is_constant_graph)
+V = var(ANFNode.is_constant)
+V1 = var(ANFNode.is_constant)
+V2 = var(ANFNode.is_constant)
+L = var(ANFNode.is_constant_graph)
 
 
 @pattern_replacer(primops.make_tuple, Xs)
