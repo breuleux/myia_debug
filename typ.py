@@ -1,6 +1,7 @@
-
 from dataclasses import dataclass
 from myia.dtype import Bool, Int, Float, List, Array, pytype_to_myiatype
+from myia.prim.shape_inferrers import NOSHAPE as NSH  # noqa: F401
+from myia.infer import ANYTHING as ANY  # noqa: F401
 
 B = Bool
 
