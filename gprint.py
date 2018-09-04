@@ -12,7 +12,7 @@ from myia.info import DebugInfo, About
 from myia.ir import ANFNode, Apply, Constant, Graph, GraphCloner, \
     ParentProxy, GraphManager, manage
 from myia.parser import Location
-from myia.prim import ops as primops, Primitive
+from myia.prim import ops as primops
 from myia.prim.value_inferrers import LimitedValue
 from myia.opt import PatternEquilibriumOptimizer, pattern_replacer
 from myia.utils import Registry, NS
@@ -691,7 +691,8 @@ class _VMFrame:
                 ('values', self.values),
                 ('closure', self.closure),
                 ('todo', self.todo),
-                ('ownership', [x.graph in (None, self.graph) for x in self.todo])
+                ('ownership', [x.graph in (None, self.graph)
+                               for x in self.todo])
             ]
         )
 
@@ -798,7 +799,7 @@ class _Class:
             return hrepr.stdrepr_object(
                 str(cls.tag),
                 [(attr, hrepr(typ))
-                for attr, typ in cls.attributes.items()],
+                 for attr, typ in cls.attributes.items()],
                 delimiter='↦'
             )
 

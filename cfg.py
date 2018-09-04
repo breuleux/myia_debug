@@ -1,6 +1,5 @@
 
 from myia.opt import lib
-from myia.prim import ops as P
 
 
 tuple_opts = [

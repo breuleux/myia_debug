@@ -1,11 +1,7 @@
 
 from myia.api import scalar_pipeline, standard_pipeline
-from myia.prim.py_implementations import py_implementations
-from myia.ir import GraphCloner
-from myia.opt import (
-    PatternEquilibriumOptimizer,
-)
 from myia.pipeline import PipelineDefinition, Merge
+from myia.infer import ANYTHING
 
 from . import steps
 
@@ -58,7 +54,8 @@ class Options:
         otypes = self['types']
         oshapes = self['shapes']
 
-        args = [{} for _ in range(max(len(ovalues), len(otypes), len(oshapes)))]
+        args = [{} for _ in range(max(len(ovalues), len(otypes),
+                                      len(oshapes)))]
         for a, value in zip(args, ovalues):
             a['value'] = value if value is not None else ANYTHING
         for a, typ in zip(args, otypes):
