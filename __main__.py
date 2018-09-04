@@ -33,13 +33,14 @@ import operator
 from docopt import docopt
 from functools import reduce
 
-from myia.debug import traceback
 from myia.infer import InferenceError
 from myia.opt import lib as optlib
 from myia.pipeline import merge
 
-from . import cmd, cfg, typ, steps, do_inject
+from . import cmd, cfg, typ, steps
+from . import do_inject  # noqa: F401
 from .tools import Options, Not
+from buche import buche
 
 
 def imp(ref):

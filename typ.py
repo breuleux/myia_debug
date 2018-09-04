@@ -1,10 +1,6 @@
 
 from dataclasses import dataclass
-from myia.dtype import Bool, Int, Float, List, Array, Object, \
-    pytype_to_myiatype
-from myia.prim.py_implementations import typeof
-from myia.prim.shape_inferrers import NOSHAPE as NSH
-from myia.infer import ANYTHING as ANY
+from myia.dtype import Bool, Int, Float, List, Array, pytype_to_myiatype
 
 B = Bool
 
@@ -32,6 +28,7 @@ af16 = Array[Float[16]]
 af32 = Array[Float[32]]
 af64 = Array[Float[64]]
 
+
 @dataclass(frozen=True)
 class Point:
     x: i64
@@ -42,6 +39,7 @@ class Point:
 
     def __add__(self, other):
         return Point(self.x * other.x, self.y * other.y)
+
 
 pt = pytype_to_myiatype(Point)
 lpt = List[pt]

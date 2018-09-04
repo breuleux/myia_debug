@@ -8,7 +8,6 @@ from myia.api import (
     step_opt as opt,
     step_cconv as cconv,
     step_export as export,
-    step_debug_export as debug_export,
 )
 
 standard = [
@@ -28,5 +27,6 @@ def _adjust():
     for name, g in globals().items():
         if isinstance(g, Partial):
             g._name = name
+
 
 _adjust()
