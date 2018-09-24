@@ -6,7 +6,14 @@ import os
 from hrepr import hrepr
 
 from myia.dtype import Type, Bool, Int, Float, Tuple, List, Class, Function, \
-    TypeMeta
+    TypeMeta, UInt, Array
+
+try:
+    from myia.dtype import JTagged
+except ImportError:
+    class JTagged:
+        pass
+
 from myia.infer import Reference, Context
 from myia.info import DebugInfo, About
 from myia.ir import ANFNode, Apply, Constant, Graph, GraphCloner, \
@@ -419,10 +426,10 @@ make_tuple = GraphCosmeticPrimitive('(...)')
 X = Var('X')
 Y = Var('Y')
 Xs = SVar(Var())
-V = var(ANFNode.is_constant)
-V1 = var(ANFNode.is_constant)
-V2 = var(ANFNode.is_constant)
-L = var(ANFNode.is_constant_graph)
+V = var(lambda x: x.is_constant())
+V1 = var(lambda x: x.is_constant())
+V2 = var(lambda x: x.is_constant())
+L = var(lambda x: x.is_constant_graph())
 
 
 @pattern_replacer(primops.make_tuple, Xs)
@@ -577,7 +584,10 @@ class _LimitedValue:
 @mixin(Reference)
 class _Reference:
     def __hrepr__(self, H, hrepr):
-        return hrepr({'node': self.node, 'context': self.context})
+        return hrepr.stdrepr_object(
+            'Reference',
+            (('node', self.node), ('context', self.context))
+        )
 
 
 @mixin(Context)
@@ -586,9 +596,14 @@ class _Context:
         d = {}
         curr = self
         while curr:
-            d[curr.graph] = curr.argkey
+            sig = {}
+            for group in curr.argkey:
+                for name, value in group:
+                    l = sig.setdefault(name, [])
+                    l.append(value)
+            d[curr.graph] = sig
             curr = curr.parent
-        return hrepr(d)
+        return hrepr.stdrepr_object('Context', list(d.items()))
 
 
 @mixin(Location)
@@ -742,7 +757,19 @@ class _Int:
         if cls.is_generic():
             return H.span('Int')
         else:
-            return H.div['myia-type-int'](
+            return H.span['myia-type-int'](
+                H.sub(cls.bits)
+            )
+
+
+@mixin(UInt)
+class _UInt:
+    @classmethod
+    def __type_hrepr__(cls, H, hrepr):
+        if cls.is_generic():
+            return H.span('UInt')
+        else:
+            return H.span['myia-type-uint'](
                 H.sub(cls.bits)
             )
 
@@ -754,7 +781,7 @@ class _Float:
         if cls.is_generic():
             return H.span('Float')
         else:
-            return H.div['myia-type-float'](
+            return H.span['myia-type-float'](
                 H.sub(cls.bits)
             )
 
@@ -786,6 +813,32 @@ class _List:
                 cls='myia-type-list',
                 before='[',
                 after=']'
+            )
+
+
+@mixin(Array)
+class _Array:
+    @classmethod
+    def __type_hrepr__(cls, H, hrepr):
+        if cls.is_generic():
+            return H.span('Array')
+        else:
+            return H.span['myia-type-Array'](
+                H.span['myia-type-prefix']('A'),
+                hrepr(cls.elements)
+            )
+
+
+@mixin(JTagged)
+class _JTagged:
+    @classmethod
+    def __type_hrepr__(cls, H, hrepr):
+        if cls.is_generic():
+            return H.span('JTagged')
+        else:
+            return H.span['myia-type-JTagged'](
+                H.span['myia-type-prefix']('J'),
+                hrepr(cls.subtype)
             )
 
 

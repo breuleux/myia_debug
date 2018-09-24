@@ -32,13 +32,22 @@
     background: orange;
 }
 
+.myia-type-prefix {
+    font-weight: bold;
+}
+
 .myia-type-function {
     /* padding: 2px; */
     margin: 2px;
-    border: 2px solid orangered;
+    border: 2px solid blue;
 }
 
 .myia-type-bool {
+    font-weight: bold;
+}
+
+.myia-type-uint:before {
+    content: "u";
     font-weight: bold;
 }
 
