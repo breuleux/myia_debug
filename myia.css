@@ -8,19 +8,19 @@
 }
 
 .node-apply {
-    background: blue;
+    background: blue !important;
 }
 
 .node-parameter {
-    background: green;
+    background: green !important;
 }
 
 .node-constant {
-    background: orchid;
+    background: orchid !important;
 }
 
 .node-Graph {
-    background: mediumvioletred;
+    background: mediumvioletred !important;
 }
 
 .node-return:before {
@@ -68,4 +68,30 @@
 .myia-var {
     padding: 2px;
     border: 1px dashed blue;
+}
+
+.tippy-tooltip {
+    color: black;
+    background: white;
+    border: 1px solid #333;
+}
+
+.repl-box {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.abstract > .hrepr-title {
+    font-weight: bold;
+    background: indigo;
+}
+
+.abstract.hrepr-titled-h, .abstract.hrepr-titled-v {
+    border: 1px solid indigo;
+}
+
+.noborder.hrepr-titled-h, .noborder.hrepr-titled-v {
+    border: none;
 }
