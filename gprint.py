@@ -14,7 +14,7 @@ except ImportError:
     class JTagged:
         pass
 
-from myia.infer import Reference, Context
+from myia.infer import Reference, VirtualReference, Context
 from myia.info import DebugInfo, About
 from myia.ir import ANFNode, Apply, Constant, Graph, GraphCloner, \
     ParentProxy, GraphManager, manage
@@ -468,6 +468,42 @@ def _opt_fancy_getattr(optimizer, node, equiv):
         return Apply([ct, x], node.graph)
 
 
+@pattern_replacer(primops.array_map, V, Xs)
+def _opt_fancy_array_map(optimizer, node, equiv):
+    xs = equiv[Xs]
+    v = equiv[V]
+    if v.is_constant_graph():
+        return node
+    ct = Constant(GraphCosmeticPrimitive(f'[{v.value}]'))
+    with About(node.debug, 'cosmetic'):
+        return Apply([ct, *xs], node.graph)
+
+
+@pattern_replacer(primops.distribute, X, V)
+def _opt_fancy_distribute(optimizer, node, equiv):
+    x = equiv[X]
+    v = equiv[V]
+    ct = Constant(GraphCosmeticPrimitive(f'shape→{v.value}', on_edge=True))
+    with About(node.debug, 'cosmetic'):
+        return Apply([ct, x], node.graph)
+
+
+@pattern_replacer(primops.scalar_to_array, X)
+def _opt_fancy_scalar_to_array(optimizer, node, equiv):
+    x = equiv[X]
+    ct = Constant(GraphCosmeticPrimitive(f'to_array', on_edge=True))
+    with About(node.debug, 'cosmetic'):
+        return Apply([ct, x], node.graph)
+
+
+@pattern_replacer(primops.array_to_scalar, X)
+def _opt_fancy_array_to_scalar(optimizer, node, equiv):
+    x = equiv[X]
+    ct = Constant(GraphCosmeticPrimitive(f'to_scalar', on_edge=True))
+    with About(node.debug, 'cosmetic'):
+        return Apply([ct, x], node.graph)
+
+
 def cosmetic_transformer(g):
     """Transform a graph so that it looks nicer.
 
@@ -479,6 +515,10 @@ def cosmetic_transformer(g):
         _opt_fancy_getitem,
         _opt_fancy_resolve,
         _opt_fancy_getattr,
+        _opt_fancy_array_map,
+        _opt_fancy_distribute,
+        _opt_fancy_scalar_to_array,
+        _opt_fancy_array_to_scalar,
     )
     opt(g)
     return g
@@ -579,6 +619,15 @@ class _NS:
 class _LimitedValue:
     def __hrepr__(self, H, hrepr):
         return hrepr(self.value)
+
+
+@mixin(VirtualReference)
+class _VirtualReference:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object(
+            'VirtualReference',
+            self.values.items()
+        )
 
 
 @mixin(Reference)
