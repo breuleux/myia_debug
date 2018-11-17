@@ -7,6 +7,7 @@ from hrepr import hrepr
 
 from myia.dtype import Type, Bool, Int, Float, Tuple, List, Class, Function, \
     TypeMeta, UInt, Array
+from myia.utils import OrderedSet
 
 try:
     from myia.dtype import JTagged
@@ -613,6 +614,12 @@ class _ParentProxy:
 class _NS:
     def __hrepr__(self, H, hrepr):
         return hrepr(self.__dict__)
+
+
+@mixin(OrderedSet)
+class _OrderedSet:
+    def __hrepr__(self, H, hrepr):
+        return hrepr(set(self._d.keys()))
 
 
 @mixin(LimitedValue)

@@ -35,7 +35,8 @@ from functools import reduce
 
 from myia.infer import InferenceError
 from myia.opt import lib as optlib
-from myia.pipeline import merge
+from myia.utils import merge
+from myia.debug.traceback import print_inference_error
 
 from . import cmd, cfg, typ, steps
 from . import do_inject  # noqa: F401

@@ -5,7 +5,6 @@ from myia.opt import lib
 tuple_opts = [
     lib.getitem_tuple,
     lib.setitem_tuple,
-    lib.tail_tuple,
     lib.bubble_op_tuple_binary,
 ]
 

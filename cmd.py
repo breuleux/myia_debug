@@ -23,7 +23,7 @@ def show(o):
         graph_height='95vh',
         node_tooltip=ttip,
         function_in_node=not o['--function-nodes'],
-        graph_beautify=not o['--no-beautify'],
+        graph_beautify=not o['--no-beautify'] and not o['--function-nodes'],
     )
 
 

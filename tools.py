@@ -1,7 +1,8 @@
 
-from myia.api import scalar_pipeline, standard_pipeline
-from myia.pipeline import PipelineDefinition, Merge
+from myia.pipeline import \
+    PipelineDefinition, scalar_pipeline, standard_pipeline
 from myia.infer import ANYTHING
+from myia.utils import Merge
 
 from . import steps
 
