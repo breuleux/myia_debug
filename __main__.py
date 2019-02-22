@@ -180,15 +180,6 @@ def run(command, options, interactive=None):
 
     if interactive:
         code_globals['options'] = options
-        # buche.command_template(
-        #     content=str(
-        #         H.div['repl-box'](
-        #             H.style(mcss),
-        #             H.bucheLog(address="/"),
-        #             H.bucheInput(address="/input")
-        #         )
-        #     )
-        # )
         repl = Repl(
             buche,
             reader,
@@ -211,62 +202,6 @@ def run(command, options, interactive=None):
     #     print_inference_error(e)
     except Exception as e:
         buche(e, interactive=True)
-
-    # repl = buche['/']
-    # inp = buche['/input']
-    # saved = []
-    # cmdlog = ['']
-    # cmdidx = 0
-
-    # @reader.on_keyup
-    # def repl_key(event, message):
-    #     nonlocal cmdidx
-    #     key = message.which
-    #     if key == 'Up':
-    #         cmdidx = (cmdidx - 1) % len(cmdlog)
-    #         inp.command_set(value=cmdlog[cmdidx])
-    #     elif key == 'Down':
-    #         cmdidx = (cmdidx + 1) % len(cmdlog)
-    #         inp.command_set(value=cmdlog[cmdidx])
-
-    # @reader.on_submit
-    # def repl_line(event, message):
-    #     nonlocal cmdidx
-    #     code = message.value
-    #     if code.strip() == '':
-    #         return
-    #     repl.html.logEntry['echo'](code)
-    #     inp.command_set()
-    #     try:
-    #         try:
-    #             res = eval(code, code_globals)
-    #             if res is not None:
-    #                 repl.show.logEntry['result'](res, interactive=True)
-    #         except SyntaxError:
-    #             exec(code, code_globals)
-    #     except Exception as exc:
-    #         repl.show.logEntry['error'](exc)
-    #     cmdlog.append(code)
-    #     cmdidx = 0
-
-    # @reader.on_click
-    # def repl_select(event, message):
-    #     if hasattr(message, 'obj'):
-    #         try:
-    #             rank = saved.index(message.obj)
-    #             varname = f'_{rank + 1}'
-    #         except ValueError:
-    #             saved.append(message.obj)
-    #             rank = len(saved)
-    #             varname = f'_{rank}'
-    #             code_globals[varname] = message.obj
-    #             repl.html.logEntry['echo'](f'{varname} = {message.obj}')
-    #         inp.command_append(value=varname)
-    #     inp.command_focus()
-
-    # if interactive:
-    #     inp.command_focus()
-    #     reader.start()
 
     if interactive:
         repl.start(nodisplay=True)
