@@ -2,20 +2,32 @@
 from myia.ir import ANFNode
 
 from . import steps
-from buche import buche
+from buche import buche, H, reader
+
+
+def parse(o):
+    from myia.parser import parse
+    fn, = o.options['fns']
+    buche(
+        parse(fn),
+        graph_width='95vw',
+        graph_height='95vh',
+        function_in_node=not o['--function-nodes'],
+        graph_beautify=not o['--no-beautify'] and not o['--function-nodes'],
+    )
 
 
 def show(o):
-    res = o.run(default=[steps.parse,
-                         steps.resolve])
-    if 'error' in res:
-        raise res['error']
+    res = o.run(
+        default=[steps.parse,
+                 steps.resolve],
+    )
 
     g = res['graph']
 
     def ttip(node):
         if isinstance(node, ANFNode):
-            return node.inferred
+            return node.abstract
 
     buche(
         g,
@@ -26,17 +38,4 @@ def show(o):
         graph_beautify=not o['--no-beautify'] and not o['--function-nodes'],
     )
 
-
-def run(o):
-    res = o.run(default=[steps.parse,
-                         steps.resolve,
-                         steps.infer,
-                         steps.specialize,
-                         steps.opt,
-                         steps.debug_export])
-    if 'error' in res:
-        raise res['error']
-
-    f = res['output']
-
-    print('Result:', f(*o['args']))
+    return res

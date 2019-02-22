@@ -49,6 +49,19 @@ edge.fn-edge {
 edge.link-edge:selected {
     width: 1;
 } */
+edge.nest-edge, edge.use-edge {
+    width: 1;
+    line-color: green;
+    line-style: dashed;
+    target-arrow-shape: circle;
+    opacity: 0.3;
+}
+edge.nest-edge {
+    line-color: blueviolet;
+}
+edge.nest-edge:selected, edge.use-edge:selected {
+    opacity: 1;
+}
 edge.link-edge {
     width: 1;
     line-color: black;

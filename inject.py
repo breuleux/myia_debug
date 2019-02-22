@@ -18,11 +18,33 @@ def bubrk():
     db.set_trace()
 
 
+def bucheg(graph, **kwargs):
+    from myia.ir import ANFNode
+    from myia.abstract import Inferrer
+    def ttip(node):
+        if isinstance(node, ANFNode):
+            return node.abstract
+    buche(graph, node_tooltip=ttip, function_in_node=True,
+          graph_width='95vw', graph_height='95vh',
+          **kwargs)
+
+
+_log = []
+
+
+def ibuche(*args, **kwargs):
+    _log.append(args)
+    buche(*args, interactive=True, **kwargs)
+
+
 suite = {
     'buche': buche,
+    'bucheg': bucheg,
+    'ibuche': ibuche,
     'pdb': pdb,
     'breakpoint': pdb.set_trace,
-    'bubrk': bubrk
+    'bubrk': bubrk,
+    'Subgraph': gprint.Subgraph,
 }
 
 

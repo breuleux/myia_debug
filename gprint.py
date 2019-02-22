@@ -5,9 +5,16 @@ import os
 
 from hrepr import hrepr
 
+from myia.abstract import (
+    AbstractValue, AbstractScalar, AbstractFunction, AbstractTuple,
+    AbstractList, AbstractClass, AbstractJTagged, AbstractArray,
+    GraphFunction, PartialApplication, TypedPrimitive, PrimitiveFunction,
+    MetaGraphFunction,
+    VALUE, InferenceError, ANYTHING, PendingTentative
+)
 from myia.dtype import Type, Bool, Int, Float, Tuple, List, Class, Function, \
     TypeMeta, UInt, Array
-from myia.utils import OrderedSet
+from myia.utils import OrderedSet, UNKNOWN
 
 try:
     from myia.dtype import JTagged
@@ -15,14 +22,13 @@ except ImportError:
     class JTagged:
         pass
 
-from myia.infer import Reference, VirtualReference, Context
+from myia.abstract import Reference, VirtualReference, Context
 from myia.info import DebugInfo, About
 from myia.ir import ANFNode, Apply, Constant, Graph, GraphCloner, \
     ParentProxy, GraphManager, manage
 from myia.parser import Location
 from myia.prim import ops as primops
-from myia.prim.value_inferrers import LimitedValue
-from myia.opt import PatternEquilibriumOptimizer, pattern_replacer
+from myia.opt import LocalPassOptimizer, pattern_replacer, NodeMap
 from myia.utils import Registry, NS
 from myia.utils.unify import Var, SVar, var, FilterVar
 from myia.vm import VMFrame, Closure
@@ -131,13 +137,19 @@ class GraphPrinter:
 
     def __hrepr__(self, H, hrepr):
         """Return HTML representation (uses buche-cytoscape)."""
-        rval = H.cytoscapeGraph(H.style(gcss + self.extra_style))
-        rval = rval(width=hrepr.config.graph_width or '800px',
-                    height=hrepr.config.graph_height or '500px')
-        rval = rval(H.options(json.dumps(self.cyoptions)))
-        for elem in self.nodes + self.edges:
-            rval = rval(H.element(json.dumps(elem)))
-        return rval
+        opts = {
+            'style': gcss + self.extra_style,
+            'elements': self.nodes + self.edges,
+        }
+        return H.cytoscapeGraph(
+            H.script(
+                json.dumps({**opts, **self.cyoptions}),
+                type='buche/configure'
+            ),
+            width=hrepr.config.graph_width or '800px',
+            height=hrepr.config.graph_height or '500px',
+            interactive=True,
+        )
 
 
 class MyiaGraphPrinter(GraphPrinter):
@@ -264,6 +276,10 @@ class MyiaGraphPrinter(GraphPrinter):
         if fn and fn.is_constant_graph():
             self.graphs.add(fn.value)
 
+        for inp in node.inputs:
+            if inp.is_constant_graph():
+                self.cyedge(src_id=g, dest_id=inp.value, label=('', 'use-edge'))
+
         edges = []
         if fn and not (fn.is_constant() and self.function_in_node):
             edges.append((node, 'F', fn))
@@ -346,6 +362,8 @@ class MyiaGraphPrinter(GraphPrinter):
                             node=dest)
                 self.cyedge(src_id=src, dest_id=cid, label=lbl)
                 self.cyedge(src_id=cid, dest_id=dest, label=(lbl, 'link-edge'))
+                self.cyedge(src_id=src.graph, dest_id=dest.graph,
+                            label=('', 'nest-edge'))
             else:
                 self.pool.add(dest)
                 self.cyedge(src_id=src, dest_id=dest, label=lbl)
@@ -383,6 +401,181 @@ class MyiaGraphPrinter(GraphPrinter):
         """Add this node's graph if follow_references is True."""
         if node.is_constant_graph() and self.follow_references:
             self.graphs.add(node.value)
+
+
+class MyiaNodesPrinter(GraphPrinter):
+
+    def __init__(self,
+                 nodes,
+                 *,
+                 duplicate_constants=True,
+                 duplicate_free_variables=True,
+                 function_in_node=True,
+                 tooltip_gen=None,
+                 class_gen=None,
+                 extra_style=None):
+        super().__init__(
+            {
+                'layout': {
+                    'name': 'dagre',
+                    'rankDir': 'TB'
+                }
+            },
+            tooltip_gen=tooltip_gen,
+            extra_style=extra_style
+        )
+        self.duplicate_constants = duplicate_constants
+        self.duplicate_free_variables = duplicate_free_variables
+        self.function_in_node = function_in_node
+        self.labeler = NodeLabeler(
+            function_in_node=function_in_node,
+            relation_symbols=short_relation_symbols
+        )
+        self._class_gen = class_gen
+        self.todo = set(nodes)
+        self.graphs = {node.graph for node in nodes if node.graph}
+        self.focus = set()
+        # Nodes that are to be colored as return nodes
+        self.returns = {node for node in nodes
+                        if node.graph and node is node.graph.return_}
+        # IDs for duplicated constants
+        self.currid = 0
+
+    def name(self, x):
+        """Return the name of a node."""
+        return self.labeler.name(x, force=True)
+
+    def label(self, node, fn_label=None):
+        """Return the label to give to a node."""
+        return self.labeler.label(node, None, fn_label=fn_label)
+
+    def const_fn(self, node):
+        """
+        Return name of function, if constant.
+
+        Given an `Apply` node of a constant function, return the
+        name of that function, otherwise return None.
+        """
+        return self.labeler.const_fn(node)
+
+    def add_graph(self, g):
+        """Create a node for a graph."""
+        name = self.name(g)
+        argnames = [self.name(p) for p in g.parameters]
+        lbl = f'{name}({", ".join(argnames)})'
+        classes = ['function', 'focus' if g in self.focus else '']
+        self.cynode(id=g, label=lbl, classes=' '.join(classes))
+        # self.processed.add(g)
+
+    def process_node_generic(self, node, g, cl):
+        """Create node and edges for a node."""
+        if node.is_constant() and self.duplicate_constants:
+            return
+
+        lbl = self.label(node)
+
+        self.cynode(id=node, label=lbl, parent=g, classes=cl)
+
+        fn = node.inputs[0] if node.inputs else None
+        if fn and fn.is_constant_graph():
+            self.graphs.add(fn.value)
+
+        for inp in node.inputs:
+            if inp.is_constant_graph():
+                self.cyedge(src_id=g, dest_id=inp.value, label=('', 'use-edge'))
+
+        edges = []
+        if fn and not (fn.is_constant() and self.function_in_node):
+            edges.append((node, 'F', fn))
+
+        edges += [(node, i + 1, inp)
+                  for i, inp in enumerate(node.inputs[1:]) or []]
+
+        self.process_edges(edges)
+
+    def class_gen(self, node, cl=None):
+        """Generate the class name for this node."""
+        g = node.graph
+        if cl is not None:
+            pass
+        elif node in self.returns:
+            cl = 'output'
+        elif node.is_parameter():
+            cl = 'input'
+            if node not in g.parameters:
+                cl += ' unlisted'
+        elif node.is_constant():
+            cl = 'constant'
+        elif node.is_special():
+            cl = f'special-{type(node.special).__name__}'
+        else:
+            cl = 'intermediate'
+        if _has_error(node.debug):
+            cl += ' error'
+        if self._class_gen:
+            return self._class_gen(self._strip_cosmetic(node), cl)
+        else:
+            return cl
+
+    def process_node(self, node):
+        """Create node and edges for a node."""
+        # if node in self.processed:
+        #     return
+
+        g = node.graph
+        # self.follow(node)
+        cl = self.class_gen(node)
+
+        if node.inputs and node.inputs[0].is_constant():
+            fn = node.inputs[0].value
+            if fn in cosmetics:
+                cosmetics[fn](self, node, g, cl)
+            elif hasattr(fn, 'graph_display'):
+                fn.graph_display(self, node, g, cl)
+            else:
+                self.process_node_generic(node, g, cl)
+        else:
+            self.process_node_generic(node, g, cl)
+
+    def process_edges(self, edges):
+        """Create edges."""
+        for edge in edges:
+            src, lbl, dest = edge
+            if dest not in self.todo:
+                continue
+            if dest.is_constant() and self.duplicate_constants:
+                cid = self.fresh_id()
+                self.cynode(id=cid,
+                            parent=src.graph,
+                            label=self.label(dest),
+                            classes=self.class_gen(dest, 'constant'),
+                            node=dest)
+                self.cyedge(src_id=src, dest_id=cid, label=lbl)
+            elif self.duplicate_free_variables and \
+                    src.graph and dest.graph and \
+                    src.graph is not dest.graph:
+                cid = self.fresh_id()
+                self.cynode(id=cid,
+                            parent=src.graph,
+                            label=self.labeler.label(dest, force=True),
+                            classes=self.class_gen(dest, 'freevar'),
+                            node=dest)
+                self.cyedge(src_id=src, dest_id=cid, label=lbl)
+                self.cyedge(src_id=cid, dest_id=dest, label=(lbl, 'link-edge'))
+                self.cyedge(src_id=src.graph, dest_id=dest.graph,
+                            label=('', 'nest-edge'))
+            else:
+                self.cyedge(src_id=src, dest_id=dest, label=lbl)
+
+    def process(self):
+        """Process all graphs in entry_points."""
+        if self.nodes or self.edges:
+            return
+        for g in self.graphs:
+            self.add_graph(g)
+        for node in self.todo:
+            self.process_node(node)
+        return self.nodes, self.edges
 
 
 cosmetics = Registry()
@@ -475,7 +668,8 @@ def _opt_fancy_array_map(optimizer, node, equiv):
     v = equiv[V]
     if v.is_constant_graph():
         return node
-    ct = Constant(GraphCosmeticPrimitive(f'[{v.value}]'))
+    name = short_labeler.label(v)
+    ct = Constant(GraphCosmeticPrimitive(f'[{name}]'))
     with About(node.debug, 'cosmetic'):
         return Apply([ct, *xs], node.graph)
 
@@ -505,22 +699,55 @@ def _opt_fancy_array_to_scalar(optimizer, node, equiv):
         return Apply([ct, x], node.graph)
 
 
+@pattern_replacer(primops.transpose, X, V)
+def _opt_fancy_transpose(optimizer, node, equiv):
+    if equiv[V].value == (1, 0):
+        x = equiv[X]
+        ct = Constant(GraphCosmeticPrimitive(f'T', on_edge=True))
+        with About(node.debug, 'cosmetic'):
+            return Apply([ct, x], node.graph)
+    else:
+        return node
+
+
+@pattern_replacer(primops.array_reduce, primops.scalar_add, X, V)
+def _opt_fancy_sum(optimizer, node, equiv):
+    x = equiv[X]
+    shp = equiv[V].value
+    ct = Constant(GraphCosmeticPrimitive(f'sum {"x".join(map(str, shp))}'))
+    with About(node.debug, 'cosmetic'):
+        return Apply([ct, x], node.graph)
+
+
+@pattern_replacer(primops.distribute, (primops.scalar_to_array, V), X)
+def _opt_distributed_constant(optimizer, node, equiv):
+    return equiv[V]
+
+
 def cosmetic_transformer(g):
     """Transform a graph so that it looks nicer.
 
     The resulting graph is not a valid one to run, because it may contain nodes
     with fake functions that only serve a cosmetic purpose.
     """
-    opt = PatternEquilibriumOptimizer(
+    spec = (
+        _opt_distributed_constant,
         _opt_fancy_make_tuple,
         _opt_fancy_getitem,
         _opt_fancy_resolve,
         _opt_fancy_getattr,
         _opt_fancy_array_map,
         _opt_fancy_distribute,
-        _opt_fancy_scalar_to_array,
+        _opt_fancy_transpose,
+        _opt_fancy_sum,
+        # _opt_fancy_scalar_to_array,
         _opt_fancy_array_to_scalar,
+        # careful=True
     )
+    nmap = NodeMap()
+    for opt in spec:
+        nmap.register(getattr(opt, 'interest', None), opt)
+    opt = LocalPassOptimizer(nmap)
     opt(g)
     return g
 
@@ -622,12 +849,6 @@ class _OrderedSet:
         return hrepr(set(self._d.keys()))
 
 
-@mixin(LimitedValue)
-class _LimitedValue:
-    def __hrepr__(self, H, hrepr):
-        return hrepr(self.value)
-
-
 @mixin(VirtualReference)
 class _VirtualReference:
     def __hrepr__(self, H, hrepr):
@@ -652,12 +873,15 @@ class _Context:
         d = {}
         curr = self
         while curr:
-            sig = {}
-            for group in curr.argkey:
-                for name, value in group:
-                    l = sig.setdefault(name, [])
-                    l.append(value)
-            d[curr.graph] = sig
+            if curr.argkey and isinstance(curr.argkey[0], tuple):
+                sig = {}
+                for group in curr.argkey:
+                    for name, value in group:
+                        l = sig.setdefault(name, [])
+                        l.append(value)
+                d[curr.graph] = sig
+            else:
+                d[curr.graph] = curr.argkey
             curr = curr.parent
         return hrepr.stdrepr_object('Context', list(d.items()))
 
@@ -688,7 +912,9 @@ class _DebugInfo:
             tr = d.get('trace', None)
             if tr:
                 fr = tr[-3]
-                d['trace'] = Location(fr.filename, fr.lineno, 0)
+                d['trace'] = Location(
+                    fr.filename, fr.lineno, 0, fr.lineno, 0, None
+                )
             d['name'] = short_labeler.label(info)
             return d
 
@@ -699,10 +925,10 @@ class _DebugInfo:
             info = info.about.debug
         tabs.append((info, 'initial'))
 
-        rval = H.tabbedView()
+        rval = H.boxTabs()
         for info, rel in tabs:
             pane = hrepr(mkdict(info))
-            rval = rval(H.view(H.tab(rel), H.pane(pane)))
+            rval = rval(H.tabEntry(H.tabLabel(rel), H.tabPane(pane)))
 
         return rval
 
@@ -948,3 +1174,235 @@ class _FilterVar:
             return H.div['myia-var', 'myia-filter-var'](
                 f'{self.tag}: {self.filter}'
             )
+
+
+class Subgraph:
+    def __init__(self, *nodes, depth=1, context=0):
+        nodes = set(nodes)
+        for i in range(depth):
+            for n in list(nodes):
+                nodes.update(n.inputs)
+        if context != 0:
+            for n in nodes:
+                if n.graph is not None:
+                    mng = n.graph.manager
+            for i in range(context):
+                for n in list(nodes):
+                    nodes.update(n2 for n2, _ in mng.uses[n])
+        self.nodes = nodes
+
+    @classmethod
+    def __hrepr_resources__(cls, H):
+        """Require the cytoscape plugin for buche."""
+        return GraphPrinter.__hrepr_resources__(H)
+
+    def __hrepr__(self, H, hrepr):
+        dc = hrepr.config.duplicate_constants
+        dfv = hrepr.config.duplicate_free_variables
+        fin = hrepr.config.function_in_node
+        tgen = hrepr.config.node_tooltip
+        cgen = hrepr.config.node_class
+        xsty = hrepr.config.graph_style
+        gpr = MyiaNodesPrinter(
+            self.nodes,
+            duplicate_constants=True if dc is None else dc,
+            duplicate_free_variables=True if dfv is None else dfv,
+            function_in_node=True if fin is None else fin,
+            tooltip_gen=tgen,
+            class_gen=cgen,
+            extra_style=xsty,
+        )
+        gpr.process()
+        return gpr.__hrepr__(H, hrepr)
+
+
+# @mixin(InferenceTask)
+# class _InferenceTask:
+#     def __hrepr__(self, H, hrepr):
+#         return hrepr.stdrepr_object(
+#             'Task',
+#             (('wait_for', self._fut_waiter),
+#              ('key', self.key)),
+#             delimiter="↦",
+#         )
+
+
+@mixin(PendingTentative)
+class _PendingTentative:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object(
+            'PendingTentative',
+            (('tentative', self.tentative),
+             ('done', self.resolved()),
+             ('prio', self.priority()))
+        )
+
+
+#################
+# Abstract data #
+#################
+
+
+def _clean(values):
+    return {k: v for k, v in values.items()
+            if v not in {ANYTHING, UNKNOWN}}
+
+
+@mixin(AbstractValue)
+class _AbstractValue:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object(
+            '★Value',
+            _clean(self.values).items(),
+            delimiter="↦",
+            cls='abstract',
+        )
+
+
+@mixin(AbstractScalar)
+class _AbstractScalar:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object(
+            f'★Scalar',
+            _clean(self.values).items(),
+            delimiter="↦",
+            cls='abstract',
+        )
+
+
+@mixin(AbstractFunction)
+class _AbstractFunction:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_iterable(
+            self.values[VALUE],
+            before='★Function',
+            cls='abstract',
+        )
+
+
+@mixin(AbstractJTagged)
+class _AbstractJTagged:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_iterable(
+            [
+                H.div(
+                    hrepr.stdrepr_object(
+                        '', _clean(self.values).items(), delimiter="↦",
+                        cls='noborder'
+                    ),
+                    hrepr(self.element),
+                    style='display:flex;flex-direction:column;'
+                )
+            ],
+            before='★J',
+            cls='abstract',
+        )
+
+
+@mixin(AbstractTuple)
+class _AbstractTuple:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_iterable(
+            self.elements,
+            before='★T',
+            cls='abstract',
+        )
+
+
+@mixin(AbstractArray)
+class _AbstractArray:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_iterable(
+            [
+                H.div(
+                    hrepr.stdrepr_object(
+                        '', _clean(self.values).items(), delimiter="↦",
+                        cls='noborder'
+                    ),
+                    hrepr(self.element),
+                    style='display:flex;flex-direction:column;'
+                )
+            ],
+            before='★A',
+            cls='abstract',
+        )
+
+
+@mixin(AbstractList)
+class _AbstractList:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_iterable(
+            [
+                H.div(
+                    hrepr.stdrepr_object(
+                        '', _clean(self.values).items(), delimiter="↦",
+                        cls='noborder'
+                    ),
+                    hrepr(self.element),
+                    style='display:flex;flex-direction:column;'
+                )
+            ],
+            before='★L',
+            cls='abstract',
+        )
+
+
+@mixin(AbstractClass)
+class _AbstractClass:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object(
+            f'★{self.tag}',
+            self.attributes.items(),
+            delimiter="↦",
+            cls='abstract'
+        )
+
+
+@mixin(GraphFunction)
+class _GraphFunction:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object(
+            'GraphFunction',
+            (('graph', self.graph), ('context', self.context)),
+            delimiter="↦",
+        )
+
+
+@mixin(PartialApplication)
+class _PartialApplication:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object(
+            'Partial',
+            (('fn', self.fn), ('args', self.args)),
+            delimiter="↦",
+        )
+
+
+@mixin(TypedPrimitive)
+class _TypedPrimitive:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object(
+            'TypedPrimitive',
+            (('prim', self.prim), ('args', self.args), ('output', self.output)),
+            delimiter="↦",
+        )
+
+
+@mixin(MetaGraphFunction)
+class _MetaGraphFunction:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object(
+            'MetaGraphFunction',
+            (('metagraph', self.metagraph),),
+            delimiter="↦",
+        )
+
+
+@mixin(PrimitiveFunction)
+class _PrimitiveFunction:
+    def __hrepr__(self, H, hrepr):
+        return hrepr.stdrepr_object(
+            'PrimitiveFunction',
+            (('prim', self.prim),),
+            delimiter="↦",
+        )

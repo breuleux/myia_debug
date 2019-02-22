@@ -13,6 +13,7 @@ Usage:
      [--scalar]
      [--no-beautify]
      [--function-nodes]
+     [--interactive]
      [<rest>...]
 
 Options:
@@ -27,13 +28,15 @@ Options:
   --scalar              Use the scalar pipeline.
   --no-beautify         Don't beautify graphs.
   --function-nodes      Show individual nodes for functions called.
+  -i --interactive      Show an interactive prompt afterwards.
 """
 
 import operator
 from docopt import docopt
 from functools import reduce
+from hrepr import hrepr
 
-from myia.infer import InferenceError
+from myia.abstract import InferenceError
 from myia.opt import lib as optlib
 from myia.utils import merge
 from myia.debug.traceback import print_inference_error
@@ -41,7 +44,8 @@ from myia.debug.traceback import print_inference_error
 from . import cmd, cfg, typ, steps
 from . import do_inject  # noqa: F401
 from .tools import Options, Not
-from buche import buche
+from .gprint import mcss
+from buche import buche, reader, H, Repl
 
 
 def imp(ref):
@@ -81,8 +85,12 @@ def resolve(ref, default_modules=[], always_wrap=True, split=True):
     else:
         refs = ref.split(',')
 
+    refs = [r for r in refs if r]
+
     if len(refs) > 1:
         return do_all(refs, split=False)
+    else:
+        ref, = refs
 
     if ref.startswith('-'):
         ref = ref[1:]
@@ -163,18 +171,114 @@ def resolve_options(*option_dicts,
     return options
 
 
+code_globals = globals()
+
+
+def run(command, options, interactive=None):
+    if interactive is None:
+        interactive = options['--interactive']
+
+    if interactive:
+        code_globals['options'] = options
+        # buche.command_template(
+        #     content=str(
+        #         H.div['repl-box'](
+        #             H.style(mcss),
+        #             H.bucheLog(address="/"),
+        #             H.bucheInput(address="/input")
+        #         )
+        #     )
+        # )
+        repl = Repl(
+            buche,
+            reader,
+            code_globals=code_globals,
+            address="/repl",
+            log_address="/"
+        )
+        buche.command_template(content=str(hrepr(repl)))
+
+    buche.master.send({
+        "command": "redirect",
+        "from": "/stdout",
+        "to": "/"
+    })
+
+    try:
+        res = command(Options(options))
+        code_globals['res'] = res
+    # except InferenceError as e:
+    #     print_inference_error(e)
+    except Exception as e:
+        buche(e, interactive=True)
+
+    # repl = buche['/']
+    # inp = buche['/input']
+    # saved = []
+    # cmdlog = ['']
+    # cmdidx = 0
+
+    # @reader.on_keyup
+    # def repl_key(event, message):
+    #     nonlocal cmdidx
+    #     key = message.which
+    #     if key == 'Up':
+    #         cmdidx = (cmdidx - 1) % len(cmdlog)
+    #         inp.command_set(value=cmdlog[cmdidx])
+    #     elif key == 'Down':
+    #         cmdidx = (cmdidx + 1) % len(cmdlog)
+    #         inp.command_set(value=cmdlog[cmdidx])
+
+    # @reader.on_submit
+    # def repl_line(event, message):
+    #     nonlocal cmdidx
+    #     code = message.value
+    #     if code.strip() == '':
+    #         return
+    #     repl.html.logEntry['echo'](code)
+    #     inp.command_set()
+    #     try:
+    #         try:
+    #             res = eval(code, code_globals)
+    #             if res is not None:
+    #                 repl.show.logEntry['result'](res, interactive=True)
+    #         except SyntaxError:
+    #             exec(code, code_globals)
+    #     except Exception as exc:
+    #         repl.show.logEntry['error'](exc)
+    #     cmdlog.append(code)
+    #     cmdidx = 0
+
+    # @reader.on_click
+    # def repl_select(event, message):
+    #     if hasattr(message, 'obj'):
+    #         try:
+    #             rank = saved.index(message.obj)
+    #             varname = f'_{rank + 1}'
+    #         except ValueError:
+    #             saved.append(message.obj)
+    #             rank = len(saved)
+    #             varname = f'_{rank}'
+    #             code_globals[varname] = message.obj
+    #             repl.html.logEntry['echo'](f'{varname} = {message.obj}')
+    #         inp.command_append(value=varname)
+    #     inp.command_focus()
+
+    # if interactive:
+    #     inp.command_focus()
+    #     reader.start()
+
+    if interactive:
+        repl.start(nodisplay=True)
+
+
 def main(*option_dicts, read_argv=True, read_config=True, rest_target='--fn'):
     options = resolve_options(*option_dicts,
                               read_argv=read_argv,
                               read_config=read_config,
                               rest_target=rest_target)
     options = process_options(options, rest_target)
-    try:
-        options['command'](Options(options))
-    except InferenceError:
-        raise
-    except Exception as e:
-        buche(e)
+    run(options['command'], options)
 
 
 if __name__ == '__main__':

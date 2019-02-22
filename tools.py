@@ -1,7 +1,7 @@
 
 from myia.pipeline import \
     PipelineDefinition, scalar_pipeline, standard_pipeline
-from myia.infer import ANYTHING
+from myia.abstract import from_value, AbstractValue
 from myia.utils import Merge
 
 from . import steps
@@ -39,7 +39,9 @@ class Options:
         elif opts:
             pdef = pdef.configure({'opt.opts': Merge(opts)})
 
-        if config:
+        if callable(config):
+            pdef = config(pdef)
+        elif config:
             pdef = pdef.configure(config)
 
         return pdef.make()
@@ -51,20 +53,10 @@ class Options:
         return pip(input=fn, argspec=argspec)
 
     def argspec(self):
-        ovalues = self['args']
-        otypes = self['types']
-        oshapes = self['shapes']
-
-        args = [{} for _ in range(max(len(ovalues), len(otypes),
-                                      len(oshapes)))]
-        for a, value in zip(args, ovalues):
-            a['value'] = value if value is not None else ANYTHING
-        for a, typ in zip(args, otypes):
-            a['type'] = typ
-        for a, shp in zip(args, oshapes):
-            a['shape'] = shp
-
-        return args
+        return [
+            v if isinstance(v, AbstractValue) else from_value(v, broaden=True)
+            for v in self['args']
+        ]
 
     def __getitem__(self, key):
         return self.options[key]
