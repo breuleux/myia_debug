@@ -1,33 +1,26 @@
 from dataclasses import dataclass
 from myia.dtype import Bool, Int, Float, List, Array, pytype_to_myiatype, \
     Tuple, JTagged
-from myia.abstract import ANYTHING as ANY  # noqa: F401
+from myia.abstract import ANYTHING as ANY, AbstractScalar, AbstractList, \
+    AbstractArray, AbstractClass, TYPE, VALUE, from_value
 
-B = Bool
+B = AbstractScalar({VALUE: ANY, TYPE: Bool})
 
-i16 = Int[16]
-i32 = Int[32]
-i64 = Int[64]
+i16 = AbstractScalar({VALUE: ANY, TYPE: Int[16]})
+i32 = AbstractScalar({VALUE: ANY, TYPE: Int[32]})
+i64 = AbstractScalar({VALUE: ANY, TYPE: Int[64]})
 
-f16 = Float[16]
-f32 = Float[32]
-f64 = Float[64]
+f16 = AbstractScalar({VALUE: ANY, TYPE: Float[16]})
+f32 = AbstractScalar({VALUE: ANY, TYPE: Float[32]})
+f64 = AbstractScalar({VALUE: ANY, TYPE: Float[64]})
 
-li16 = List[Int[16]]
-li32 = List[Int[32]]
-li64 = List[Int[64]]
+li16 = AbstractList(i16)
+li32 = AbstractList(i32)
+li64 = AbstractList(i64)
 
-lf16 = List[Float[16]]
-lf32 = List[Float[32]]
-lf64 = List[Float[64]]
-
-ai16 = Array[Int[16]]
-ai32 = Array[Int[32]]
-ai64 = Array[Int[64]]
-
-af16 = Array[Float[16]]
-af32 = Array[Float[32]]
-af64 = Array[Float[64]]
+lf16 = AbstractList(f16)
+lf32 = AbstractList(f32)
+lf64 = AbstractList(f64)
 
 
 @dataclass(frozen=True)
@@ -42,5 +35,5 @@ class Point:
         return Point(self.x * other.x, self.y * other.y)
 
 
-pt = pytype_to_myiatype(Point)
-lpt = List[pt]
+pt = from_value(Point(1, 2), broaden=True)
+lpt = AbstractList(pt)
