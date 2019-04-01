@@ -12,8 +12,8 @@ from myia.pipeline.steps import (
     step_opt2 as opt2,
     step_validate as validate,
     step_cconv as cconv,
+    step_compile as export,
 )
-from myia.compile import step_export as export
 
 standard = [
     parse, resolve, infer, specialize,

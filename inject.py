@@ -4,18 +4,9 @@ import pdb
 import sys
 
 from buche import buche, reader
-from buche.debug import BucheDb
 
 # Load custom hrepr methods for Graph etc.
 from . import gprint  # noqa
-
-
-def bubrk():
-    """Breakpoint using buche."""
-    print()
-    ch = buche.open('debug', 'log', dict(hasInput=True))
-    db = BucheDb(ch, reader)
-    db.set_trace()
 
 
 def bucheg(graph, **kwargs):
@@ -41,9 +32,6 @@ suite = {
     'buche': buche,
     'bucheg': bucheg,
     'ibuche': ibuche,
-    'pdb': pdb,
-    'breakpoint': pdb.set_trace,
-    'bubrk': bubrk,
     'Subgraph': gprint.Subgraph,
 }
 

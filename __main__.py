@@ -5,8 +5,6 @@
 Usage:
   dm <command>
      [-f FUNCTION...] [-a ARG...] [-g...]
-     [-t TYPE...]
-     [--shapes SHAPE...]
      [-O OPT...]
      [--config FILE...]
      [--pipeline PIP...]
@@ -20,8 +18,6 @@ Options:
   -f --fn FUNCTION...   The function to run.
   -a --args ARG...      Arguments to feed to the function.
   -g                    Apply gradient once for each occurrence of the flag.
-  -t --types TYPE...    Types of the arguments.
-  --shapes SHAPE...     Shapes of the arguments.
   -c --config FILE...   Use given configuration.
   -O --opt OPT...       Run given optimizations.
   -p --pipeline PIP...  The pipeline to use.
@@ -45,7 +41,10 @@ from . import cmd, cfg, typ, steps
 from . import do_inject  # noqa: F401
 from .tools import Options, Not
 from .gprint import mcss
-from buche import buche, reader, H, Repl
+from buche import buche, reader, H, Repl, smart_breakpoint
+
+
+smart_breakpoint()
 
 
 def imp(ref):
@@ -123,15 +122,13 @@ def process_options(options, rest_target):
 
     fns = resolve(options['--fn'],
                   always_wrap=False)
-    args = resolve(options['--args'])
+    args = resolve(options['--args'], [typ])
     optim = resolve(options['--opt'],
                     default_modules=[optlib, cfg],
                     always_wrap=False)
     pip = resolve(options['--pipeline'],
                   default_modules=[steps, cfg],
                   always_wrap=False)
-    types = resolve(options['--types'], [typ])
-    shapes = resolve(options['--shapes'], [typ])
     return {
         **options,
         'command': command,
@@ -139,8 +136,6 @@ def process_options(options, rest_target):
         'args': args,
         'opts': optim,
         'pipeline': pip,
-        'types': types,
-        'shapes': shapes,
         'grad': options['-g'],
         'options': options,
     }
